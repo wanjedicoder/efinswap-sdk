@@ -44,6 +44,7 @@ export interface SwapParameters {
    * The amount of wei to send in hex.
    */
   value: string
+  amountToApprove: String | null
 }
 
 function toHex(currencyAmount: CurrencyAmount) {
@@ -59,7 +60,7 @@ export abstract class Router {
   /**
    * Cannot be constructed.
    */
-  private constructor() {}
+  private constructor() { }
   /**
    * Produces the on-chain method name to call and the hex encoded parameters to pass as arguments for a given trade.
    * @param trade to produce call parameters for
@@ -78,6 +79,7 @@ export abstract class Router {
     const path: string[] = trade.route.path.map(token => token.address)
     const deadline = `0x${(Math.floor(new Date().getTime() / 1000) + options.ttl).toString(16)}`
     const useFeeOnTransfer = Boolean(options.feeOnTransfer)
+    const amountToApprove: String | null = etherIn ? null : amountIn
 
     let methodName: string
     let args: (string | string[])[]
@@ -126,7 +128,8 @@ export abstract class Router {
     return {
       methodName,
       args,
-      value
+      value,
+      amountToApprove
     }
   }
 }

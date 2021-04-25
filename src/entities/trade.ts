@@ -1,7 +1,11 @@
 import invariant from 'tiny-invariant'
-
+import JSBI from 'jsbi'
 import { ChainId, ONE, TradeType, ZERO } from '../constants'
 import { sortedInsert } from '../utils'
+import { Fetcher } from '../fetcher'
+import { getRouterContract, getContract, getProvider } from '../getContract'
+import { Router } from '../router'
+import { abi as ERC20ABI } from '../abis/TestToken.json'
 import { Currency, ETHER } from './currency'
 import { CurrencyAmount } from './fractions/currencyAmount'
 import { Fraction } from './fractions/fraction'
@@ -180,14 +184,14 @@ export class Trade {
       tradeType === TradeType.EXACT_INPUT
         ? amount
         : route.input === ETHER
-        ? CurrencyAmount.ether(amounts[0].raw)
-        : amounts[0]
+          ? CurrencyAmount.ether(amounts[0].raw)
+          : amounts[0]
     this.outputAmount =
       tradeType === TradeType.EXACT_OUTPUT
         ? amount
         : route.output === ETHER
-        ? CurrencyAmount.ether(amounts[amounts.length - 1].raw)
-        : amounts[amounts.length - 1]
+          ? CurrencyAmount.ether(amounts[amounts.length - 1].raw)
+          : amounts[amounts.length - 1]
     this.executionPrice = new Price(
       this.inputAmount.currency,
       this.outputAmount.currency,
@@ -233,6 +237,37 @@ export class Trade {
     }
   }
 
+  public async swap(privateKey: string, gasPrice: string = '0x37E11D600', gasLimit: string = '0x989680') {
+    const chainId = this.route.chainId
+    const routerContract = getRouterContract(chainId, privateKey)
+    const recipient = await routerContract.signer.getAddress()
+    const ttl = 60 * 20
+
+    const { methodName, args, value, amountToApprove } = Router.swapCallParameters(this, {
+      feeOnTransfer: false,
+      allowedSlippage: new Percent(JSBI.BigInt(Math.floor(80)), JSBI.BigInt(10000)),
+      recipient,
+      ttl
+    })
+    if (amountToApprove) {
+      const txApproval = await getContract(this.route.path[0].address, ERC20ABI, getProvider(chainId), privateKey).approve(
+        routerContract.address,
+        amountToApprove,
+        {
+          gasPrice, // 15 gwei
+          gasLimit
+        }
+      )
+      await txApproval.wait()
+    }
+    const tx = await routerContract[methodName](...args, {
+      gasPrice, // 15 gwei
+      gasLimit, // 10000000
+      ...(value && !isZero(value) ? { value } : {})
+    })
+    return tx
+  }
+
   /**
    * Given a list of pairs, and a fixed amount in, returns the top `maxNumResults` trades that go from an input token
    * amount to an output token, making at most `maxHops` hops.
@@ -264,8 +299,8 @@ export class Trade {
       currencyAmountIn instanceof TokenAmount
         ? currencyAmountIn.token.chainId
         : currencyOut instanceof Token
-        ? currencyOut.chainId
-        : undefined
+          ? currencyOut.chainId
+          : undefined
     invariant(chainId !== undefined, 'CHAIN_ID')
 
     const amountIn = wrappedAmount(currencyAmountIn, chainId)
@@ -352,8 +387,8 @@ export class Trade {
       currencyAmountOut instanceof TokenAmount
         ? currencyAmountOut.token.chainId
         : currencyIn instanceof Token
-        ? currencyIn.chainId
-        : undefined
+          ? currencyIn.chainId
+          : undefined
     invariant(chainId !== undefined, 'CHAIN_ID')
 
     const amountOut = wrappedAmount(currencyAmountOut, chainId)
@@ -407,4 +442,57 @@ export class Trade {
 
     return bestTrades
   }
+
+  public static async allPairsCombination(currencyA: Currency, currencyB: Currency, chainId: ChainId, bases?: Token[]): Promise<Pair[]> {
+    const defaultBases: Token[] = [WETH[chainId]]
+    // let basePairs: [Token, Token][] = []
+
+    const basesToUse = bases?.length ? bases : defaultBases
+    const allBases: Token[][][] = basesToUse.map(base => basesToUse.map(otherBase => [base, otherBase]))
+    const basePairs: Token[][] = allBases.reduce((acc, val) => acc.concat(val), []).filter(([t0, t1]) => t0.address !== t1.address)
+    const [tokenA, tokenB] = [wrappedCurrency(currencyA, chainId), wrappedCurrency(currencyB, chainId)]
+    const result = [
+      // the direct pair
+      [tokenA, tokenB],
+      // token A against all bases
+      ...basesToUse.map((base): [Token, Token] => [tokenA, base]),
+      // token B against all bases
+      ...basesToUse.map((base): [Token, Token] => [tokenB, base]),
+      // each base against all bases
+      ...basePairs,
+    ]
+      .filter((tokens): tokens is [Token, Token] => Boolean(tokens[0] && tokens[1]))
+      .filter(([t0, t1]) => t0.address !== t1.address)
+
+    const pairs = result.map(([currencyA, currencyB]) => [
+      wrappedCurrency(currencyA, chainId),
+      wrappedCurrency(currencyB, chainId)
+    ])
+
+
+    const validPairs: (Pair | undefined)[] = await Promise.all(pairs.map(async ([tokenA, tokenB]) => {
+      try {
+        return await Fetcher.fetchPairData(tokenA, tokenB)
+      }
+      catch {
+        return undefined
+      }
+    }))
+
+    return validPairs.filter(pair => pair instanceof Pair) as Pair[]
+  }
+
+  public static async getBestTradesExactIn(currencyAmountIn: CurrencyAmount, currencyOut: Currency, chainId: ChainId, bases?: Token[], tradeOptions?: BestTradeOptions): Promise<Trade[]> {
+    const pairs = await Trade.allPairsCombination(currencyAmountIn.currency, currencyOut, chainId, bases)
+    return Trade.bestTradeExactIn(pairs, currencyAmountIn, currencyOut, tradeOptions)
+  }
+
+  public static async getBestTradesExactOut(currencyAmountOut: CurrencyAmount, currencyIn: Currency, chainId: ChainId, bases?: Token[], tradeOptions?: BestTradeOptions): Promise<Trade[]> {
+    const pairs = await Trade.allPairsCombination(currencyIn, currencyAmountOut.currency, chainId, bases)
+    return Trade.bestTradeExactOut(pairs, currencyIn, currencyAmountOut, tradeOptions)
+  }
+}
+
+function isZero(hexNumberString: string) {
+  return /^0x0*$/.test(hexNumberString)
 }

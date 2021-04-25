@@ -20,6 +20,25 @@ export enum Rounding {
 }
 
 export const FACTORY_ADDRESS = '0xBCfCcbde45cE874adCB698cC183deBcF17952812'
+export const FACTORY_ADDRESS_BY_CHAIN = {
+  [ChainId.MAINNET]: '',
+  [ChainId.BSCTESTNET]: '0xCc261efd1946f1810959B2cbbDbD7057d39b0FCa'
+}
+
+export const ROUTER_ADDRESS_BY_CHAIN = {
+  [ChainId.MAINNET]: '',
+  [ChainId.BSCTESTNET]: '0x32D6A78deBEC40A8b32A0Cb95Fc60524b14389B0'
+}
+
+export const INIT_CODE_HASH_BY_CHAIN = {
+  [ChainId.MAINNET]: '',
+  [ChainId.BSCTESTNET]: '0x825f7bd3f5deccab4ef9adb06501a35e8df4a3b46346c6a067612ea19b9696e2'
+}
+
+export const RPC_URL = {
+  [ChainId.MAINNET]: 'https://bsc-dataseed1.binance.org',
+  [ChainId.BSCTESTNET]: 'https://data-seed-prebsc-2-s1.binance.org:8545/'
+}
 
 export const INIT_CODE_HASH = '0xd0d4c4cd0848c93cb4fd1f498d7013ee6bfb25783ea21593d5834f5d250ece66'
 
