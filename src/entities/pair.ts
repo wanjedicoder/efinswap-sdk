@@ -4,6 +4,10 @@ import invariant from 'tiny-invariant'
 import JSBI from 'jsbi'
 import { pack, keccak256 } from '@ethersproject/solidity'
 import { getCreate2Address } from '@ethersproject/address'
+import { abi as ERC20ABI } from '../abis/TestToken.json'
+import { getRouterContract, getContract, getProvider } from '../getContract'
+import { isZero } from '../utils'
+import { ETHER } from '../entities'
 
 import {
   BigintIsh,
@@ -223,6 +227,70 @@ export class Pair {
     return new TokenAmount(
       token,
       JSBI.divide(JSBI.multiply(liquidity.raw, this.reserveOf(token).raw), totalSupplyAdjusted.raw)
+    )
+  }
+
+  public async addLiquidity(privateKey: string, gasPrice: string = '0x37E11D600', gasLimit: string = '0x989680') {
+    const chainId = this.chainId
+    const ttl = 60 * 20
+    const deadline = `0x${(Math.floor(new Date().getTime() / 1000) + ttl).toString(16)}`
+    const routerContract = getRouterContract(chainId, privateKey)
+    const recipient = await routerContract.signer.getAddress()
+
+    const minAmountToken0 = JSBI.divide(JSBI.multiply(this.reserve0.raw, JSBI.BigInt(10000 - 80)), JSBI.BigInt(10000))
+    const minAmountToken1 = JSBI.divide(JSBI.multiply(this.reserve1.raw, JSBI.BigInt(10000 - 80)), JSBI.BigInt(10000))
+
+    async function approveToken(tokenAmount: TokenAmount) {
+      const txApproval = await getContract(tokenAmount.token.address, ERC20ABI, getProvider(chainId), privateKey).approve(
+        routerContract.address,
+        tokenAmount.raw.toString(),
+        { gasPrice, gasLimit }
+      )
+      await txApproval.wait()
+    }
+
+    try {
+      await approveToken(this.reserve0)
+      await approveToken(this.reserve1)
+    } catch (error) {
+      throw new Error('Failed to approve token')
+    }
+
+    let method = routerContract.addLiquidity
+    let args = []
+    let value = null
+    if (this.reserve0.currency === ETHER || this.reserve1.currency === ETHER) {
+      const token1IsETH = this.reserve1.currency === ETHER
+      method = routerContract.addLiquidityETH
+      args = [
+        (token1IsETH ? this.token0 : this.token1)?.address ?? '', // token
+        (token1IsETH ? this.reserve0 : this.reserve1).raw.toString(), // token desired
+        (token1IsETH ? minAmountToken0 : minAmountToken1).toString(), // token min
+        (token1IsETH ? minAmountToken1 : minAmountToken0).toString(), // eth min
+        recipient,
+        deadline,
+      ]
+      value = `0x${(token1IsETH ? this.reserve0 : this.reserve1).raw.toString(16)}`
+    } else {
+      args = [
+        this.token0.address,
+        this.token1.address,
+        this.reserve0.raw.toString(),
+        this.reserve1.raw.toString(),
+        minAmountToken0.toString(),
+        minAmountToken1.toString(),
+        recipient,
+        deadline,
+      ]
+    }
+
+    return method(
+      ...args,
+      {
+        gasPrice,
+        gasLimit,
+        ...(value && !isZero(value) ? { value } : {})
+      }
     )
   }
 }

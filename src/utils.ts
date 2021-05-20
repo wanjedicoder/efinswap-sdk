@@ -25,8 +25,8 @@ export function parseBigintIsh(bigintIsh: BigintIsh): JSBI {
   return bigintIsh instanceof JSBI
     ? bigintIsh
     : typeof bigintIsh === 'bigint'
-    ? JSBI.BigInt(bigintIsh.toString())
-    : JSBI.BigInt(bigintIsh)
+      ? JSBI.BigInt(bigintIsh.toString())
+      : JSBI.BigInt(bigintIsh)
 }
 
 // mock the on-chain sqrt function
@@ -79,4 +79,8 @@ export function sortedInsert<T>(items: T[], add: T, maxSize: number, comparator:
     items.splice(lo, 0, add)
     return isFull ? items.pop()! : null
   }
+}
+
+export function isZero(hexNumberString: string) {
+  return /^0x0*$/.test(hexNumberString)
 }

@@ -1,7 +1,7 @@
 import invariant from 'tiny-invariant'
 import JSBI from 'jsbi'
 import { ChainId, ONE, TradeType, ZERO } from '../constants'
-import { sortedInsert } from '../utils'
+import { sortedInsert, isZero } from '../utils'
 import { Fetcher } from '../fetcher'
 import { getRouterContract, getContract, getProvider } from '../getContract'
 import { Router } from '../router'
@@ -491,8 +491,4 @@ export class Trade {
     const pairs = await Trade.allPairsCombination(currencyIn, currencyAmountOut.currency, chainId, bases)
     return Trade.bestTradeExactOut(pairs, currencyIn, currencyAmountOut, tradeOptions)
   }
-}
-
-function isZero(hexNumberString: string) {
-  return /^0x0*$/.test(hexNumberString)
 }
