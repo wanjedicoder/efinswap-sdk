@@ -1,6 +1,11 @@
 import invariant from 'tiny-invariant'
+import ethers from "ethers";
+import { BigNumber } from '@ethersproject/bignumber'
 import { ChainId } from '../constants'
 import { validateAndParseAddress } from '../utils'
+import { getProvider, getContract } from '../getContract'
+import { abi as IUniswapV2PairABI } from '../abis/IUniswapV2Pair.json'
+import { TokenAmount } from './fractions/tokenAmount'
 import { Currency } from './currency'
 
 /**
@@ -9,11 +14,13 @@ import { Currency } from './currency'
 export class Token extends Currency {
   public readonly chainId: ChainId
   public readonly address: string
+  public readonly contract: ethers.Contract
 
   public constructor(chainId: ChainId, address: string, decimals: number, symbol?: string, name?: string) {
     super(decimals, symbol, name)
     this.chainId = chainId
     this.address = validateAndParseAddress(address)
+    this.contract = getContract(this.address, IUniswapV2PairABI, getProvider(this.chainId))
   }
 
   /**
@@ -38,6 +45,20 @@ export class Token extends Currency {
     invariant(this.chainId === other.chainId, 'CHAIN_IDS')
     invariant(this.address !== other.address, 'ADDRESSES')
     return this.address.toLowerCase() < other.address.toLowerCase()
+  }
+
+  public async totalSupply(): Promise<TokenAmount> {
+    const amount = await this.contract.totalSupply()
+    return new TokenAmount(this, amount)
+  }
+
+  public async getReserves(): Promise<[BigNumber, BigNumber]> {
+    return this.contract.getReserves()
+  }
+
+  public async balanceOf(address: string): Promise<TokenAmount> {
+    const amount = await this.contract.balanceOf(address)
+    return new TokenAmount(this, amount)
   }
 }
 

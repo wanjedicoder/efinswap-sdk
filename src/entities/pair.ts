@@ -4,8 +4,8 @@ import invariant from 'tiny-invariant'
 import JSBI from 'jsbi'
 import { pack, keccak256 } from '@ethersproject/solidity'
 import { getCreate2Address } from '@ethersproject/address'
-import { abi as ERC20ABI } from '../abis/TestToken.json'
-import { getRouterContract, getContract, getProvider } from '../getContract'
+import { BigNumber } from '@ethersproject/bignumber'
+import { getRouterContract } from '../getContract'
 import { isZero } from '../utils'
 import { ETHER } from '../entities'
 
@@ -22,10 +22,27 @@ import {
   ChainId
 } from '../constants'
 import { sqrt, parseBigintIsh } from '../utils'
+import approveToken from '../approveToken'
 import { InsufficientReservesError, InsufficientInputAmountError } from '../errors'
 import { Token } from './token'
+import { Percent } from './fractions'
 
 let PAIR_ADDRESS_CACHE: { [token0Address: string]: { [token1Address: string]: string } } = {}
+
+export type LiquidityInfoOf = {
+  totalSupply: TokenAmount;
+  userLiquidity: TokenAmount;
+  reserves: [TokenAmount, TokenAmount];
+  liquidityAmountToken0: TokenAmount,
+  liquidityAmountToken1: TokenAmount,
+}
+
+export type RemoveLiquidityAmounts = {
+  liquidityAmountToken0ToRemove: TokenAmount;
+  liquidityAmountToken1ToRemove: TokenAmount;
+  liquidityAmountTokenToRemove: TokenAmount;
+  percent: Percent;
+}
 
 export class Pair {
   public readonly liquidityToken: Token
@@ -230,7 +247,74 @@ export class Pair {
     )
   }
 
-  public async addLiquidity(privateKey: string, gasPrice: string = '0x37E11D600', gasLimit: string = '0x989680') {
+  public async getLiquidityInfoOf(address: string): Promise<LiquidityInfoOf> {
+    const [totalSupply, userLiquidity] = await Promise.all([
+      this.liquidityToken.totalSupply(),
+      this.liquidityToken.balanceOf(address),
+    ])
+    const reserves: [TokenAmount, TokenAmount] = [this.reserveOf(this.token0), this.reserveOf(this.token1)]
+    const liquidityAmountToken0 = this.getLiquidityValue(this.token0, totalSupply, userLiquidity)
+    const liquidityAmountToken1 = this.getLiquidityValue(this.token1, totalSupply, userLiquidity)
+    return { totalSupply, userLiquidity, reserves, liquidityAmountToken0, liquidityAmountToken1 }
+  }
+
+  public async getRemoveLiquidityAmounts(percentAmount: string, liquidityInfo: LiquidityInfoOf): Promise<RemoveLiquidityAmounts> {
+    const { userLiquidity, liquidityAmountToken0, liquidityAmountToken1 } = liquidityInfo
+    const percent = new Percent(percentAmount, '100')
+    const liquidityAmountTokenToRemove = new TokenAmount(this.liquidityToken, percent.multiply(userLiquidity.raw).quotient)
+    return {
+      liquidityAmountToken0ToRemove: new TokenAmount(liquidityAmountToken0.token, percent.multiply(liquidityAmountToken0.raw).quotient),
+      liquidityAmountToken1ToRemove: new TokenAmount(liquidityAmountToken1.token, percent.multiply(liquidityAmountToken1.raw).quotient),
+      liquidityAmountTokenToRemove,
+      percent
+    }
+  }
+
+  public async removeLiquidiy(privateKey: string, removeLiquidityAmounts: RemoveLiquidityAmounts) {
+    const gasPrice: string = '0x37E11D600'
+    const gasLimit: string = '0x989680'
+    const chainId = this.chainId
+    const ttl = 60 * 20
+    const deadline = `0x${(Math.floor(new Date().getTime() / 1000) + ttl).toString(16)}`
+    const routerContract = getRouterContract(chainId, privateKey)
+    const recipient = await routerContract.signer.getAddress()
+    const { liquidityAmountToken0ToRemove, liquidityAmountToken1ToRemove, liquidityAmountTokenToRemove } = removeLiquidityAmounts
+
+    const minAmountToken0 = liquidityAmountToken0ToRemove.getMinAmount()
+    const minAmountToken1 = liquidityAmountToken1ToRemove.getMinAmount()
+
+    const args = [
+      this.token0.address,
+      this.token1.address,
+      liquidityAmountTokenToRemove.raw.toString(),
+      minAmountToken0.raw.toString(),
+      minAmountToken1.raw.toString(),
+      recipient,
+      deadline
+    ]
+
+    try {
+      await approveToken(liquidityAmountTokenToRemove, privateKey)
+    } catch (error) {
+      throw new Error('Failed to approve token')
+    }
+
+    let method = routerContract.removeLiquidity
+    let estimate = routerContract.estimateGas.removeLiquidity
+    let estimateGasLimit = null
+    try {
+      const estimatedGasLimit = await estimate(...args, {})
+      estimateGasLimit = estimatedGasLimit.mul(BigNumber.from(10000).add(BigNumber.from(1000))).div(BigNumber.from(10000))
+    } catch (error) { }
+
+    return method(...args, {
+      ...(estimateGasLimit ? { gasLimit: estimateGasLimit } : { gasPrice, gasLimit })
+    })
+  }
+
+  public async addLiquidity(privateKey: string) {
+    const gasPrice: string = '0x37E11D600'
+    const gasLimit: string = '0x989680'
     const chainId = this.chainId
     const ttl = 60 * 20
     const deadline = `0x${(Math.floor(new Date().getTime() / 1000) + ttl).toString(16)}`
@@ -240,28 +324,23 @@ export class Pair {
     const minAmountToken0 = JSBI.divide(JSBI.multiply(this.reserve0.raw, JSBI.BigInt(10000 - 80)), JSBI.BigInt(10000))
     const minAmountToken1 = JSBI.divide(JSBI.multiply(this.reserve1.raw, JSBI.BigInt(10000 - 80)), JSBI.BigInt(10000))
 
-    async function approveToken(tokenAmount: TokenAmount) {
-      const txApproval = await getContract(tokenAmount.token.address, ERC20ABI, getProvider(chainId), privateKey).approve(
-        routerContract.address,
-        tokenAmount.raw.toString(),
-        { gasPrice, gasLimit }
-      )
-      await txApproval.wait()
-    }
-
     try {
-      await approveToken(this.reserve0)
-      await approveToken(this.reserve1)
+      await approveToken(this.reserve0, privateKey)
+      await approveToken(this.reserve1, privateKey)
     } catch (error) {
       throw new Error('Failed to approve token')
     }
 
     let method = routerContract.addLiquidity
+    let estimate = routerContract.estimateGas.addLiquidity
+    let estimateGasLimit = null
     let args = []
     let value = null
     if (this.reserve0.currency === ETHER || this.reserve1.currency === ETHER) {
       const token1IsETH = this.reserve1.currency === ETHER
       method = routerContract.addLiquidityETH
+      estimate = routerContract.estimateGas.addLiquidityETH
+
       args = [
         (token1IsETH ? this.token0 : this.token1)?.address ?? '', // token
         (token1IsETH ? this.reserve0 : this.reserve1).raw.toString(), // token desired
@@ -284,11 +363,15 @@ export class Pair {
       ]
     }
 
+    try {
+      const estimatedGasLimit = await estimate(...args, value && !isZero(value) ? { value } : {})
+      estimateGasLimit = estimatedGasLimit.mul(BigNumber.from(10000).add(BigNumber.from(1000))).div(BigNumber.from(10000))
+    } catch (error) { }
+
     return method(
       ...args,
       {
-        gasPrice,
-        gasLimit,
+        ...(estimateGasLimit ? { gasLimit: estimateGasLimit } : { gasPrice, gasLimit }),
         ...(value && !isZero(value) ? { value } : {})
       }
     )

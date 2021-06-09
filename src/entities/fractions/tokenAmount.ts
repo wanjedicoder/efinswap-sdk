@@ -23,4 +23,8 @@ export class TokenAmount extends CurrencyAmount {
     invariant(this.token.equals(other.token), 'TOKEN')
     return new TokenAmount(this.token, JSBI.subtract(this.raw, other.raw))
   }
+
+  public getMinAmount(slippageTolerance: number = 80) {
+    return new TokenAmount(this.token, JSBI.divide(JSBI.multiply(this.raw, JSBI.BigInt(10000 - slippageTolerance)), JSBI.BigInt(10000)))
+  }
 }

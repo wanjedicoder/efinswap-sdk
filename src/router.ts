@@ -45,6 +45,7 @@ export interface SwapParameters {
    */
   value: string
   amountToApprove: String | null
+  currencyAmountToApprove: CurrencyAmount | null
 }
 
 function toHex(currencyAmount: CurrencyAmount) {
@@ -74,12 +75,14 @@ export abstract class Router {
     invariant(options.ttl > 0, 'TTL')
 
     const to: string = validateAndParseAddress(options.recipient)
-    const amountIn: string = toHex(trade.maximumAmountIn(options.allowedSlippage))
+    const currencyAmountIn = trade.maximumAmountIn(options.allowedSlippage)
+    const amountIn: string = toHex(currencyAmountIn)
     const amountOut: string = toHex(trade.minimumAmountOut(options.allowedSlippage))
     const path: string[] = trade.route.path.map(token => token.address)
     const deadline = `0x${(Math.floor(new Date().getTime() / 1000) + options.ttl).toString(16)}`
     const useFeeOnTransfer = Boolean(options.feeOnTransfer)
     const amountToApprove: String | null = etherIn ? null : amountIn
+    const currencyAmountToApprove: CurrencyAmount | null = etherIn ? null : currencyAmountIn
 
     let methodName: string
     let args: (string | string[])[]
@@ -129,7 +132,8 @@ export abstract class Router {
       methodName,
       args,
       value,
-      amountToApprove
+      amountToApprove,
+      currencyAmountToApprove
     }
   }
 }

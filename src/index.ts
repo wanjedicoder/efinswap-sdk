@@ -20,3 +20,5 @@ export * from './entities'
 export * from './router'
 export * from './fetcher'
 export * from './getContract'
+import approveToken from './approveToken'
+export { approveToken }

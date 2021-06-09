@@ -1,11 +1,12 @@
 import invariant from 'tiny-invariant'
 import JSBI from 'jsbi'
+import { BigNumber } from '@ethersproject/bignumber'
 import { ChainId, ONE, TradeType, ZERO } from '../constants'
 import { sortedInsert, isZero } from '../utils'
 import { Fetcher } from '../fetcher'
-import { getRouterContract, getContract, getProvider } from '../getContract'
+import { getRouterContract } from '../getContract'
 import { Router } from '../router'
-import { abi as ERC20ABI } from '../abis/TestToken.json'
+import approveToken from '../approveToken'
 import { Currency, ETHER } from './currency'
 import { CurrencyAmount } from './fractions/currencyAmount'
 import { Fraction } from './fractions/fraction'
@@ -237,32 +238,32 @@ export class Trade {
     }
   }
 
-  public async swap(privateKey: string, gasPrice: string = '0x37E11D600', gasLimit: string = '0x989680') {
+  public async swap(privateKey: string) {
+    const gasPrice: string = '0x37E11D600'
+    const gasLimit: string = '0x989680'
     const chainId = this.route.chainId
     const routerContract = getRouterContract(chainId, privateKey)
     const recipient = await routerContract.signer.getAddress()
     const ttl = 60 * 20
 
-    const { methodName, args, value, amountToApprove } = Router.swapCallParameters(this, {
+    const { methodName, args, value, amountToApprove, currencyAmountToApprove } = Router.swapCallParameters(this, {
       feeOnTransfer: false,
       allowedSlippage: new Percent(JSBI.BigInt(Math.floor(80)), JSBI.BigInt(10000)),
       recipient,
       ttl
     })
-    if (amountToApprove) {
-      const txApproval = await getContract(this.route.path[0].address, ERC20ABI, getProvider(chainId), privateKey).approve(
-        routerContract.address,
-        amountToApprove,
-        {
-          gasPrice, // 15 gwei
-          gasLimit
-        }
-      )
-      await txApproval.wait()
+    if (amountToApprove && currencyAmountToApprove) {
+      const amountToken = new TokenAmount(this.route.path[0], currencyAmountToApprove.raw)
+      await approveToken(amountToken, privateKey)
     }
+    let estimateGasLimit = null
+    try {
+      const estimatedGasLimit = await routerContract.estimateGas[methodName](...args, value && !isZero(value) ? { value } : {})
+      estimateGasLimit = estimatedGasLimit.mul(BigNumber.from(10000).add(BigNumber.from(1000))).div(BigNumber.from(10000))
+    } catch (error) { }
+
     const tx = await routerContract[methodName](...args, {
-      gasPrice, // 15 gwei
-      gasLimit, // 10000000
+      ...(estimateGasLimit ? { gasLimit: estimateGasLimit } : { gasPrice, gasLimit }),
       ...(value && !isZero(value) ? { value } : {})
     })
     return tx
@@ -445,7 +446,6 @@ export class Trade {
 
   public static async allPairsCombination(currencyA: Currency, currencyB: Currency, chainId: ChainId, bases?: Token[]): Promise<Pair[]> {
     const defaultBases: Token[] = [WETH[chainId]]
-    // let basePairs: [Token, Token][] = []
 
     const basesToUse = bases?.length ? bases : defaultBases
     const allBases: Token[][][] = basesToUse.map(base => basesToUse.map(otherBase => [base, otherBase]))

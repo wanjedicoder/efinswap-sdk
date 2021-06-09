@@ -26,7 +26,7 @@ export const FACTORY_ADDRESS_BY_CHAIN = {
 }
 
 export const ROUTER_ADDRESS_BY_CHAIN = {
-  [ChainId.MAINNET]: '0x61812aa9F34dd218913adb285E56592dA19a411a',
+  [ChainId.MAINNET]: '0x827BDb822940198F22FA984c5645a27C60E6Bb5B',
   [ChainId.BSCTESTNET]: '0x32D6A78deBEC40A8b32A0Cb95Fc60524b14389B0'
 }
 
@@ -36,7 +36,7 @@ export const INIT_CODE_HASH_BY_CHAIN = {
 }
 
 export const RPC_URL = {
-  [ChainId.MAINNET]: 'https://bsc-dataseed1.binance.org',
+  [ChainId.MAINNET]: 'https://bsc-dataseed.binance.org/',
   [ChainId.BSCTESTNET]: 'https://data-seed-prebsc-2-s1.binance.org:8545/'
 }
 
