@@ -5,7 +5,7 @@ import JSBI from 'jsbi'
 import { pack, keccak256 } from '@ethersproject/solidity'
 import { getCreate2Address } from '@ethersproject/address'
 import { BigNumber } from '@ethersproject/bignumber'
-import { getRouterContract } from '../getContract'
+import { getContract, getProvider, getRouterContract } from '../getContract'
 import { isZero } from '../utils'
 import { ETHER } from '../entities'
 
@@ -24,8 +24,10 @@ import {
 import { sqrt, parseBigintIsh } from '../utils'
 import approveToken from '../approveToken'
 import { InsufficientReservesError, InsufficientInputAmountError } from '../errors'
-import { Token } from './token'
 import { Percent } from './fractions'
+import { Fetcher } from '../fetcher'
+import { Token } from './token'
+import { abi as IEFINV2Factory } from '../abis/IEFINV2Factory.json'
 
 let PAIR_ADDRESS_CACHE: { [token0Address: string]: { [token1Address: string]: string } } = {}
 
@@ -42,6 +44,27 @@ export type RemoveLiquidityAmounts = {
   liquidityAmountToken1ToRemove: TokenAmount;
   liquidityAmountTokenToRemove: TokenAmount;
   percent: Percent;
+}
+
+async function getPair(token0: Token, token1: Token): Promise<Pair | null> {
+  try {
+    const pair = await Fetcher.fetchPairData(token0, token1)
+    return pair
+  } catch {
+    return null
+  }
+}
+
+function getPairAddresses(tokens: Token[]): { [key: string]: [Token, Token] } {
+  const allBases = tokens.map(base => tokens.map(otherBase => [base, otherBase]))
+  return allBases
+    .reduce((acc, val) => acc.concat(val), [])
+    .filter(([t0, t1]) => t0.address !== t1.address)
+    .map(([token0, token1]) => ({
+      tokens: [token0, token1],
+      pairAddress: Pair.getAddress(token0, token1)
+    }))
+    .reduce((acc, { tokens, pairAddress }) => ({ ...acc, [pairAddress]: tokens }), {})
 }
 
 export class Pair {
@@ -66,6 +89,25 @@ export class Pair {
     }
 
     return PAIR_ADDRESS_CACHE[tokens[0].address][tokens[1].address]
+  }
+
+  public static async getAllLiquidityPairsOf(address: string, tokens: Token[]): Promise<LiquidityInfoOf[]> {
+    if (!tokens.length) return []
+    const chainId = tokens[0].chainId
+    const allPairsByAddress = getPairAddresses(tokens)
+    const factoryAddress = FACTORY_ADDRESS_BY_CHAIN[chainId]
+    const factory = await getContract(factoryAddress, IEFINV2Factory, getProvider(chainId))
+    const allPairsLength = (await factory.allPairsLength()).toNumber()
+    const promises = Array.from(Array(allPairsLength).keys()).map(async index => {
+      const pairAddress = await factory.allPairs(index)
+      const tokens = allPairsByAddress[pairAddress]
+      return tokens ? getPair(tokens[0], tokens[1]) : null
+    })
+    const pairs: (Pair | null)[] = await Promise.all(promises)
+    const validPairs = pairs.filter(pair => pair) as Pair[]
+    const liquidityInfoPerPair = await Promise.all(validPairs.map(async pair => pair.getLiquidityInfoOf(address)))
+    return liquidityInfoPerPair.filter(liquidityInfo => liquidityInfo.userLiquidity.greaterThan(ZERO))
+
   }
 
   public constructor(tokenAmountA: TokenAmount, tokenAmountB: TokenAmount) {

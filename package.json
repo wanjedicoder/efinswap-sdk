@@ -1,7 +1,7 @@
 {
   "name": "wanjedi-efinswap-sdk",
   "license": "MIT",
-  "version": "1.2.8",
+  "version": "1.2.9",
   "description": "🛠 An SDK for building applications on top of efinswap.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
