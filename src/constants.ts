@@ -37,7 +37,7 @@ export const INIT_CODE_HASH_BY_CHAIN = {
 
 export const RPC_URL = {
   [ChainId.MAINNET]: 'https://bsc-dataseed.binance.org/',
-  [ChainId.BSCTESTNET]: 'https://data-seed-prebsc-2-s1.binance.org:8545/'
+  [ChainId.BSCTESTNET]: 'https://data-seed-prebsc-1-s1.binance.org:8545/'
 }
 
 export const INIT_CODE_HASH = '0xd0d4c4cd0848c93cb4fd1f498d7013ee6bfb25783ea21593d5834f5d250ece66'
@@ -64,3 +64,7 @@ export const SOLIDITY_TYPE_MAXIMA = {
   [SolidityType.uint8]: JSBI.BigInt('0xff'),
   [SolidityType.uint256]: JSBI.BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
 }
+
+
+export const GAS_PRICE = '0x12A05F200' // 5000000000 - 5 gwei
+export const GAS_LIMIT = '0xD6D8' // 55000

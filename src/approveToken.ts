@@ -2,10 +2,11 @@ import { BigNumber } from '@ethersproject/bignumber'
 import { TokenAmount } from "./entities";
 import { getContract, getProvider, getRouterContract } from "./getContract";
 import { abi as ERC20ABI } from './abis/TestToken.json'
+import { GAS_LIMIT, GAS_PRICE } from './constants'
 
 export default async function approveToken(tokenAmount: TokenAmount, privateKey: string) {
-  const gasPrice: string = '0x37E11D600'
-  const gasLimit: string = '0x989680'
+  const gasPrice: string = GAS_PRICE
+  const gasLimit: string = GAS_LIMIT
   const chainId = tokenAmount.token.chainId;
   const routerContract = getRouterContract(chainId, privateKey)
   let estimateGasLimit = null;
