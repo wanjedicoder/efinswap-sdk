@@ -407,7 +407,6 @@ export class Pair {
     const gasPrice: string = GAS_PRICE
     const gasLimit: string = GAS_LIMIT
     const args = [...values, recipient, deadline]
-    console.log(args)
     try {
       const estimate = routerContract.estimateGas[method]
       const estimatedGasLimit = await estimate(...args, value && !isZero(value) ? { value } : {})
