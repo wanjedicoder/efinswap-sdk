@@ -1,7 +1,8 @@
 import { TradeType } from './constants'
 import invariant from 'tiny-invariant'
 import { validateAndParseAddress } from './utils'
-import { CurrencyAmount, ETHER, Percent, Trade } from './entities'
+import { CurrencyAmount, Percent, Trade } from './entities'
+import { ChainId, TokenAmount, WETH } from '.'
 
 /**
  * Options for producing the arguments to send call to the router.
@@ -52,6 +53,16 @@ function toHex(currencyAmount: CurrencyAmount) {
   return `0x${currencyAmount.raw.toString(16)}`
 }
 
+function isWBNB(input: CurrencyAmount): Boolean {
+  const chainId: ChainId | undefined =
+    input instanceof TokenAmount
+      ? input.token.chainId
+      : undefined
+  invariant(chainId !== undefined, 'CHAIN_ID')
+  const WBNB = WETH[chainId]
+  return (input as TokenAmount).token === WBNB
+}
+
 const ZERO_HEX = '0x0'
 
 /**
@@ -68,8 +79,8 @@ export abstract class Router {
    * @param options options for the call parameters
    */
   public static swapCallParameters(trade: Trade, options: TradeOptions): SwapParameters {
-    const etherIn = trade.inputAmount.currency === ETHER
-    const etherOut = trade.outputAmount.currency === ETHER
+    const etherIn = isWBNB(trade.inputAmount)
+    const etherOut = isWBNB(trade.outputAmount)
     // the router does not support both ether in and out
     invariant(!(etherIn && etherOut), 'ETHER_IN_OUT')
     invariant(options.ttl > 0, 'TTL')

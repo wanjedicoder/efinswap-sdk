@@ -313,7 +313,7 @@ export class Pair {
     }
   }
 
-  public async removeLiquidiy(privateKey: string, removeLiquidityAmounts: RemoveLiquidityAmounts) {
+  public async removeLiquidity(privateKey: string, removeLiquidityAmounts: RemoveLiquidityAmounts) {
     const { liquidityAmountToken0ToRemove, liquidityAmountToken1ToRemove, liquidityAmountTokenToRemove } = removeLiquidityAmounts
 
     const minAmountToken0 = liquidityAmountToken0ToRemove.getMinAmount()
@@ -330,7 +330,7 @@ export class Pair {
     return this._removeLiquidity(args, "removeLiquidity", liquidityAmountTokenToRemove, privateKey)
   }
 
-  public async removeLiquidiyETH(privateKey: string, removeLiquidityAmounts: RemoveLiquidityAmounts) {
+  public async removeLiquidityETH(privateKey: string, removeLiquidityAmounts: RemoveLiquidityAmounts) {
     const { liquidityAmountToken0ToRemove, liquidityAmountToken1ToRemove, liquidityAmountTokenToRemove } = removeLiquidityAmounts
     const chainId = liquidityAmountToken0ToRemove.token.chainId
     const WBNB = WETH[chainId]
